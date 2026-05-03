@@ -1,0 +1,49 @@
+import axios from 'axios';
+
+const BASE_URL = (import.meta.env['VITE_API_URL'] as string | undefined) ?? 'http://localhost:3000';
+
+const api = axios.create({
+  baseURL: BASE_URL,
+  headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
+});
+
+export interface HealthResponse {
+  status: string;
+  message: string;
+}
+
+export const healthApi = {
+  check: () => api.get<HealthResponse>('/api/health'),
+};
+
+export const authApi = {
+  register: (data: { name: string; email: string; password: string }) =>
+    api.post('/api/auth/register', data),
+  login: (data: { email: string; password: string }) =>
+    api.post('/api/auth/login', data),
+  logout: () => api.post('/api/auth/logout'),
+};
+
+export const usersApi = {
+  getAll:        ()                          => api.get('/api/users'),
+  getById:       (id: string)                => api.get(`/api/users/${id}`),
+  create:        (data: unknown)             => api.post('/api/users', data),
+  update:        (id: string, data: unknown) => api.put(`/api/users/${id}`, data),
+  remove:        (id: string)                => api.delete(`/api/users/${id}`),
+};
+
+export const ordersApi = {
+  getAll:  ()                          => api.get('/api/orders'),
+  getById: (id: string)                => api.get(`/api/orders/${id}`),
+  create:  (data: unknown)             => api.post('/api/orders', data),
+  update:  (id: string, data: unknown) => api.put(`/api/orders/${id}`, data),
+  remove:  (id: string)                => api.delete(`/api/orders/${id}`),
+};
+
+export const securityLogsApi = {
+  getAll:  ()            => api.get('/api/security-logs'),
+  getById: (id: string)  => api.get(`/api/security-logs/${id}`),
+};
+
+export default api;

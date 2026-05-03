@@ -1,0 +1,440 @@
+# Project Planning: Secure Web Application Development
+
+## 1. Application Overview
+
+### Project Name
+Secure Course Assignment Portal
+
+### Application Goal
+The goal of this project is to develop a secure web application that allows students to submit course assignments, upload supporting files, and track their submission status. Teaching assistants can review submissions, add feedback, and assign grades. Lecturers can manage courses, assignments, and submissions. Administrators can manage users, review system logs, and monitor sensitive system activity.
+
+The project is designed for a Secure Development course. Security-related features will be added gradually during the semester, such as authentication, authorization, input validation, secure file upload, protection against path traversal, protection against SSRF, CSRF protection, logging, and safe handling of race conditions.
+
+### Target Audience
+The application is intended for academic course environments and will be used by students, teaching assistants, lecturers, and system administrators.
+
+---
+
+## 2. User Roles and Access
+
+| User Role | Description | Key Permissions |
+|---|---|---|
+| Guest | An unauthenticated visitor. | View the login page, view the registration page, create a new account. |
+| Student | A registered user who submits assignments. | View assigned courses, submit assignments, upload files, edit own submissions before deadline, view own grades and feedback, update own profile. |
+| Teaching Assistant | A course staff member who reviews submissions. | View submissions for assigned courses, download submitted files, add review comments, update submission status, assign or update grades. |
+| Lecturer | A course owner or instructor. | Create and manage courses, create assignments, view all submissions in owned courses, assign teaching assistants, publish grades, manage assignment deadlines. |
+| Administrator | A system-level user responsible for maintenance and monitoring. | Manage all users, manage roles, view system logs, access selected server log files, review security events, disable suspicious accounts. |
+
+---
+
+## 3. Core Use Cases and Features
+
+## A. Account Management and Access
+
+### User Registration
+A new user can create an account through the registration page.
+
+Required input:
+
+- Full name
+- Email address
+- Password
+- Confirm password
+- Requested role, usually Student by default
+- Course registration code, if required by the system
+
+Planned security considerations:
+
+- Validate all input fields on the backend.
+- Store passwords using secure hashing.
+- Prevent duplicate email registration.
+- Apply password strength rules.
+- Log registration attempts.
+
+### User Login
+A registered user can log in using an email address and password.
+
+Login process:
+
+1. User submits email and password.
+2. Backend validates the credentials.
+3. If valid, the backend creates an authenticated session or returns a JWT.
+4. The frontend stores the authentication state and redirects the user according to their role.
+
+Planned security considerations:
+
+- Do not reveal whether the email or password is incorrect.
+- Apply rate limiting to login attempts.
+- Log successful and failed login attempts.
+- Protect routes according to user role.
+
+### User Profile Update
+A logged-in user can update profile information.
+
+Editable fields:
+
+- Full name
+- Password
+- Profile image, optional
+
+Restrictions:
+
+- Users cannot change their own role.
+- Users cannot update another user's profile unless they are administrators.
+- Password changes require the current password.
+
+---
+
+## B. Content and File Interaction
+
+### User-Generated Content Submission
+Students can submit assignments through the system.
+
+Required input:
+
+- Course ID
+- Assignment ID
+- Submission title
+- Written answer or description
+- Optional GitHub repository link
+- Optional notes for the reviewer
+
+Submission flow:
+
+1. Student selects a course.
+2. Student selects an active assignment.
+3. Student enters the submission details.
+4. Student uploads a file if required.
+5. Student submits the assignment.
+6. The system stores the submission and marks it as submitted.
+
+Planned security considerations:
+
+- Validate all text fields.
+- Prevent stored XSS in submission text and reviewer comments.
+- Ensure students can only edit or delete their own submissions.
+- Ensure submissions cannot be changed after the deadline unless allowed by the lecturer.
+
+### Media/File Submission
+Students can upload files as part of an assignment submission.
+
+Allowed examples:
+
+- PDF files
+- ZIP files
+- DOCX files
+- PNG/JPG images, if relevant
+
+Inputs required:
+
+- File type
+- Original file name
+- Assignment ID
+- Submission ID
+- Upload timestamp
+
+Storage plan:
+
+- Files will be stored on the backend server during local development.
+- File metadata will be stored in the database.
+- The actual stored file name should be generated by the backend and should not rely directly on the original user-provided file name.
+
+Planned security considerations:
+
+- Restrict allowed file extensions.
+- Restrict allowed MIME types.
+- Limit maximum file size.
+- Store files outside the public frontend directory.
+- Prevent path traversal through file names.
+- Avoid executing uploaded files.
+
+### Content Display and Management
+Student submissions will be displayed in different ways according to user role.
+
+Student view:
+
+- View own submissions.
+- View own submission status.
+- View own grade and feedback after publication.
+
+Teaching assistant view:
+
+- View submissions for assigned courses.
+- Add comments and grades.
+- Update submission review status.
+
+Lecturer view:
+
+- View all submissions for owned courses.
+- Filter submissions by course, assignment, student, and status.
+- Publish final grades.
+
+Edit and delete rules:
+
+- A student can edit or delete only their own submission before the deadline.
+- A teaching assistant can update review comments and grades only for assigned courses.
+- A lecturer can manage assignments and submissions in courses they own.
+- An administrator can manage all content if required for system maintenance.
+
+### External Data Retrieval
+The application will include a feature for validating or previewing an external GitHub repository link submitted by a student.
+
+Example flow:
+
+1. Student enters a GitHub repository URL as part of the assignment submission.
+2. Backend receives the URL.
+3. Backend sends a request to the provided URL or to a GitHub metadata API.
+4. Backend extracts basic metadata such as repository name, owner, visibility status, and last update date.
+5. The metadata is displayed in the submission page.
+
+Planned security considerations:
+
+- This feature may be used later to demonstrate SSRF risks.
+- Backend must restrict which external domains can be requested.
+- Backend must block private network addresses, localhost, and internal services.
+- Backend must apply request timeouts.
+
+---
+
+## C. System Resource Access
+
+### Local File Reading Feature
+Administrators will have a feature for viewing selected system log files from the server.
+
+Example log files:
+
+- app.log
+- auth.log
+- upload.log
+- security.log
+
+Admin input:
+
+- Log file identifier or file path
+- Optional number of lines to display
+
+Planned behavior:
+
+1. Admin selects a log file from the admin panel.
+2. Backend reads the requested log file from the server.
+3. Backend returns the log content to the admin interface.
+
+Planned security considerations:
+
+- This feature may be used later to demonstrate path traversal risks.
+- Access must be restricted to administrators only.
+- The final secure version should use an allowlist of log files.
+- User input should not allow arbitrary access to server files.
+
+### Batch/Sequential Processing
+The application will include batch grade publishing or repeated grade updates.
+
+Example feature:
+
+A lecturer can publish grades for many submissions in quick succession. A teaching assistant may also update a submission grade while the lecturer publishes final grades.
+
+Why sequence and timing matter:
+
+- Two staff members might update the same submission at almost the same time.
+- A grade might be overwritten by another request.
+- A submission status might become inconsistent, for example `graded` but without a final grade.
+
+Planned security considerations:
+
+- This feature can later demonstrate race condition problems.
+- The system should eventually use transactions or version checks.
+- Important state changes should be logged.
+
+---
+
+## D. Data Visibility and Flow
+
+### System Messages
+The application will display in-app messages and notifications.
+
+Examples:
+
+- Assignment submitted successfully.
+- Submission updated successfully.
+- File upload failed because the file type is not allowed.
+- Your assignment was reviewed.
+- Your grade was published.
+- Login failed.
+- Suspicious activity was detected.
+
+Message fields:
+
+- Message ID
+- User ID
+- Message type
+- Message text
+- Created timestamp
+- Read/unread status
+
+Planned security considerations:
+
+- Messages should not reveal sensitive technical details.
+- Error messages should be clear but not expose stack traces or internal paths.
+- User-generated text displayed inside messages should be escaped or sanitized.
+
+### Request Integration
+The application will include POST requests that cause significant state changes.
+
+Examples:
+
+- Submit assignment
+- Delete submission
+- Change password
+- Publish grade
+- Update user role
+- Disable user account
+
+Planned security considerations:
+
+- These actions may later be used to demonstrate CSRF risks.
+- The secure version should require authentication and proper authorization.
+- Sensitive state-changing requests should eventually use CSRF protection or another safe design.
+- All important state-changing actions should be logged.
+
+---
+
+## 4. Technical Stack
+
+### Frontend Technologies
+
+- React
+- Vite
+- JavaScript or TypeScript
+- HTML
+- CSS
+- Fetch API or Axios for HTTP requests
+
+### Backend Technologies / Language
+
+- Node.js
+- Express.js
+- RESTful API architecture
+- JWT or session-based authentication
+- Middleware-based authorization
+
+### Database
+
+Preferred option:
+
+- PostgreSQL
+
+Alternative option:
+
+- MySQL
+
+Main planned tables:
+
+- users
+- courses
+- course_members
+- assignments
+- submissions
+- submission_files
+- grades
+- notifications
+- logs
+
+### Development Environment / Hosting
+
+- Local development environment
+- Visual Studio Code
+- Node.js runtime
+- Local PostgreSQL/MySQL database
+- Optional later deployment to a cloud provider
+
+---
+
+## 5. RESTful API Plan
+
+### Authentication Routes
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | /api/auth/register | Register a new user. |
+| POST | /api/auth/login | Log in and receive authentication token/session. |
+| POST | /api/auth/logout | Log out the current user. |
+| PUT | /api/auth/change-password | Change current user's password. |
+
+### User Routes
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | /api/users/me | Get current user profile. |
+| PUT | /api/users/me | Update current user profile. |
+| GET | /api/admin/users | Admin gets all users. |
+| PUT | /api/admin/users/:id/role | Admin updates a user's role. |
+| PUT | /api/admin/users/:id/disable | Admin disables a user account. |
+
+### Course and Assignment Routes
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | /api/courses | Get courses visible to the current user. |
+| POST | /api/courses | Lecturer creates a new course. |
+| GET | /api/courses/:id/assignments | Get assignments for a course. |
+| POST | /api/courses/:id/assignments | Lecturer creates an assignment. |
+| PUT | /api/assignments/:id | Lecturer updates an assignment. |
+| DELETE | /api/assignments/:id | Lecturer deletes an assignment. |
+
+### Submission Routes
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | /api/assignments/:id/submissions | Student submits an assignment. |
+| GET | /api/submissions/me | Student gets own submissions. |
+| GET | /api/assignments/:id/submissions | Staff gets submissions for an assignment. |
+| PUT | /api/submissions/:id | Student updates own submission before deadline. |
+| DELETE | /api/submissions/:id | Student deletes own submission before deadline. |
+| POST | /api/submissions/:id/files | Upload a file for a submission. |
+| GET | /api/submissions/:id/files/:fileId | Download a submitted file. |
+
+### Review and Grade Routes
+
+| Method | Endpoint | Description |
+|---|---|---|
+| PUT | /api/submissions/:id/review | Teaching assistant adds review comments. |
+| PUT | /api/submissions/:id/grade | Teaching assistant or lecturer updates grade. |
+| POST | /api/assignments/:id/publish-grades | Lecturer publishes grades for an assignment. |
+
+### Admin and Log Routes
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | /api/admin/logs | Admin gets system log list. |
+| POST | /api/admin/logs/read | Admin reads selected log file. |
+| GET | /api/admin/security-events | Admin views security-related events. |
+
+---
+
+## 6. Security Development Plan
+
+The project will be developed in stages. Each stage can introduce a new security topic.
+
+Planned security topics:
+
+1. Input validation
+2. Authentication
+3. Password hashing
+4. Role-based access control
+5. Secure file upload
+6. XSS prevention
+7. SQL injection prevention
+8. Path traversal prevention
+9. SSRF prevention
+10. CSRF prevention
+11. Logging and monitoring
+12. Race condition handling
+13. Error handling and secure responses
+
+---
+
+## 7. Documentation Requirement
+
+Every implementation change, security improvement, bug fix, architectural decision, new dependency, new route, new database table, or important configuration change must be documented in a separate file named `project_info.md`.
+
+The `project_info.md` file should be updated during development and must describe what changed, why it changed, and how it affects the project.
