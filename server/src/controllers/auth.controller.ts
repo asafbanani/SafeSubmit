@@ -40,7 +40,6 @@ export async function register(
       role?: string;
     };
 
-    // ── Presence validation (full Zod schema validation comes in Phase 5) ──
 
     if (!full_name || typeof full_name !== 'string' || full_name.trim() === '') {
       next(new ValidationError('full_name is required'));
@@ -52,8 +51,24 @@ export async function register(
       return;
     }
 
-    if (!password || typeof password !== 'string' || password.length < 8) {
-      next(new ValidationError('Password must be at least 8 characters'));
+    if (!password || typeof password !== 'string') {
+      next(new ValidationError('Password is required'));
+      return;
+    }
+    if (password.length < 7) {
+      next(new ValidationError('Password must be at least 7 characters'));
+      return;
+    }
+    if (!/[A-Z]/.test(password)) {
+      next(new ValidationError('Password must contain at least one uppercase letter'));
+      return;
+    }
+    if (!/[a-z]/.test(password)) {
+      next(new ValidationError('Password must contain at least one lowercase letter'));
+      return;
+    }
+    if (!/[^A-Za-z0-9]/.test(password)) {
+      next(new ValidationError('Password must contain at least one special character'));
       return;
     }
 

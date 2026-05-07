@@ -27,8 +27,20 @@ export function RegisterPage() {
       setError('Passwords do not match');
       return;
     }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+    if (password.length < 7) {
+      setError('Password must be at least 7 characters');
+      return;
+    }
+    if (!/[A-Z]/.test(password)) {
+      setError('Password must contain at least one uppercase letter');
+      return;
+    }
+    if (!/[a-z]/.test(password)) {
+      setError('Password must contain at least one lowercase letter');
+      return;
+    }
+    if (!/[^A-Za-z0-9]/.test(password)) {
+      setError('Password must contain at least one special character (e.g. !@#$%)');
       return;
     }
 
@@ -108,10 +120,13 @@ export function RegisterPage() {
                 </label>
                 <input
                   id="password" type="password" className="form-input"
-                  placeholder="At least 8 characters" autoComplete="new-password"
+                  placeholder="Min 7 chars, upper, lower, symbol" autoComplete="new-password"
                   value={password} onChange={(e) => setPassword(e.target.value)}
                   required
                 />
+                <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                  At least 7 characters · uppercase · lowercase · special character (e.g. !@#$%)
+                </span>
               </div>
 
               <div className="form-group">
