@@ -1,14 +1,23 @@
 import type { Request, Response, NextFunction } from 'express';
 
+interface HttpError extends Error {
+  status?: number;
+}
+
 export function errorHandler(
-  err: Error,
+  err: HttpError,
   _req: Request,
   res: Response,
   _next: NextFunction,
 ): void {
+  const status = err.status ?? 500;
+  const isDev = process.env['NODE_ENV'] !== 'production';
+
+  // Never expose stack traces in production responses
   console.error(err.stack);
-  res.status(500).json({
+
+  res.status(status).json({
     status: 'error',
-    message: 'Internal server error',
+    message: isDev ? err.message : 'Internal server error',
   });
 }

@@ -21,7 +21,7 @@ const endpoints = [
   { method: 'GET',  path: '/api/health',         color: 'badge-success' },
   { method: 'POST', path: '/api/auth/login',      color: 'badge-info'    },
   { method: 'GET',  path: '/api/users',           color: 'badge-success' },
-  { method: 'GET',  path: '/api/orders',          color: 'badge-success' },
+  { method: 'GET',  path: '/api/submissions',      color: 'badge-success' },
   { method: 'GET',  path: '/api/security-logs',   color: 'badge-success' },
 ];
 

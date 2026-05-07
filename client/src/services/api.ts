@@ -33,12 +33,12 @@ export const usersApi = {
   remove:        (id: string)                => api.delete(`/api/users/${id}`),
 };
 
-export const ordersApi = {
-  getAll:  ()                          => api.get('/api/orders'),
-  getById: (id: string)                => api.get(`/api/orders/${id}`),
-  create:  (data: unknown)             => api.post('/api/orders', data),
-  update:  (id: string, data: unknown) => api.put(`/api/orders/${id}`, data),
-  remove:  (id: string)                => api.delete(`/api/orders/${id}`),
+export const submissionsApi = {
+  getAll:  ()                          => api.get('/api/submissions'),
+  getById: (id: string)                => api.get(`/api/submissions/${id}`),
+  create:  (data: unknown)             => api.post('/api/submissions', data),
+  update:  (id: string, data: unknown) => api.put(`/api/submissions/${id}`, data),
+  remove:  (id: string)                => api.delete(`/api/submissions/${id}`),
 };
 
 export const securityLogsApi = {
