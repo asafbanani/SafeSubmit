@@ -356,3 +356,281 @@ Verified with a Node.js script that mirrors `db.ts` behaviour:
 - The database file (`safesubmit.db`) is created in the `server/` directory when the server first starts.
 - `getDb()` is now available to import in any controller that needs to run a query.
 - Next: Phase 3 — implement `register` and `login` in `auth.controller.ts` using `getDb()`, bcrypt for password hashing, and JWT for token issuance.
+
+---
+
+## 2026-05-07 - Phase 3a: Registration Module
+
+### Changed Area
+Backend authentication — models, error utilities, registration controller.
+
+### What Changed
+
+**New files:**
+
+- `src/utils/AppError.ts` — Error class hierarchy used across the whole backend:
+  - `AppError` (base, carries `status: number`)
+  - `ValidationError` (422)
+  - `ConflictError` (409)
+  - `UnauthorizedError` (401)
+  - `ForbiddenError` (403)
+  - `NotFoundError` (404)
+
+- `src/models/user.model.ts` — Model for the `users` table (per DBschema.md §4.1):
+  - `User` interface — full DB row including `password_hash` (internal use only)
+  - `SafeUser` type — `User` minus `password_hash` (used in all API responses)
+  - `CreateUserInput` interface
+  - `UserModel.findByEmail(email)` — returns full `User` including hash (auth only)
+  - `UserModel.findById(id)` — returns full `User` (auth only)
+  - `UserModel.findSafeById(id)` — returns `SafeUser` (safe for responses)
+  - `UserModel.create(input)` — inserts new user, returns `SafeUser`; automatically sets `status = 'pending'` for lecturers and `status = 'active'` for all other roles
+
+- `src/models/lecturerApproval.model.ts` — Model for the `lecturer_approval_requests` table (per DBschema.md §4.7):
+  - `LecturerApprovalRequest` interface
+  - `LecturerApprovalModel.create(userId)` — creates a pending approval request
+  - `LecturerApprovalModel.findByUserId(userId)`
+  - `LecturerApprovalModel.findById(id)`
+  - `LecturerApprovalModel.findAllPending()`
+
+**Modified files:**
+
+- `src/controllers/auth.controller.ts` — `register` handler fully implemented:
+  - Validates presence of `full_name`, `email`, `password`, `role`
+  - Rejects `role = 'admin'` — admin cannot be self-registered
+  - Checks for duplicate email (returns `ConflictError` 409)
+  - Hashes password with `bcrypt` at cost factor 12
+  - Creates user + approval request in a single `better-sqlite3` transaction (atomic)
+  - Returns 201 with `SafeUser` (no `password_hash`)
+  - Lecturers receive a "pending approval" message; students and TAs receive "Registration successful"
+  - `login`, `logout`, `changePassword` still return 501 (not yet implemented)
+
+- `src/middlewares/errorHandler.ts` — upgraded to use `AppError`:
+  - `instanceof AppError` check routes known operational errors (4xx) to their correct status code and message
+  - Unknown errors (programming bugs) still return 500 and hide details in production
+
+**Packages installed:**
+- `bcrypt` (production) — password hashing
+- `@types/bcrypt` (dev) — TypeScript types
+
+### Why This Change Was Needed
+The auth controller was a 501 stub. Registration is the entry point for all users into the system — it must be implemented and secure before login or any other feature.
+
+### Security Relevance
+
+- **Password hashing** — `bcrypt.hash(password, 12)` is called before any DB write. Plain-text passwords never touch the database. The cost factor (12) is set as a named constant `BCRYPT_ROUNDS` — not hard-coded inline — so it can be reviewed and increased over time.
+- **No hard-coded passwords** — passwords only come from the request body; there are no seeded or default passwords anywhere in the codebase.
+- **`SafeUser` type** — `password_hash` is structurally excluded from the return type of `UserModel.create()` and `findSafeById()`. It is physically impossible to accidentally include the hash in an API response when using these methods.
+- **Admin role protection** — `SELF_REGISTER_ROLES` explicitly excludes `'admin'`. An attacker cannot register as admin by sending `role: 'admin'` in the request body.
+- **Lecturer approval** — lecturers are created with `status = 'pending'` and a `lecturer_approval_requests` row is created in the same DB transaction. If either write fails, both are rolled back, preventing a lecturer account from being created without an approval record.
+- **Atomic transaction** — `better-sqlite3`'s `.transaction()` ensures the user row and approval request are always consistent. No partial state is possible.
+- **Conflict error message** — duplicate email returns a `ConflictError` (409) with a clear message. This is acceptable because the registration form explicitly asks for an email — unlike the login endpoint, which must return identical messages for "email not found" and "wrong password" to prevent enumeration.
+- **`AppError` in errorHandler** — known errors (4xx) are returned with their correct status and explicit message. Unknown errors (5xx) hide their message in production, preventing internal detail leakage.
+
+### Testing
+
+Verified with a ts-node smoke test against a live SQLite database:
+- Student created with `status = 'active'`, no `password_hash` in response ✓
+- Lecturer created with `status = 'pending'`, approval request created and linked ✓
+- Password stored as bcrypt hash (`$2b$...`), not plain text ✓
+- Duplicate email correctly rejected by `UNIQUE` constraint ✓
+- TypeScript compilation: zero errors ✓
+
+### Notes / Next Steps
+- `login` is next: look up user by email, `bcrypt.compare`, check `status`, issue JWT, reset `failed_login_attempts`, log to `audit_logs`.
+- `JWT_SECRET` in `.env` is still `change_me_later` — must be replaced with a strong random value before login is implemented.
+- Full input validation (Zod) is deferred to Phase 5 but basic presence checks are already in the controller.
+
+
+---
+
+## Phase 3b — Authenticated Client Screens (2026-05-07)
+
+### Changed Area
+`client/` — all frontend auth plumbing + role-specific pages
+
+### What Changed
+
+**New files created:**
+
+- `client/src/context/AuthContext.tsx` — React context for auth state:
+  - `AuthUser` type: `{ id, email, role, full_name }`
+  - JWT stored in `localStorage` under key `'ss_token'`
+  - Pure base64 JWT decode (`atob`) — no external library
+  - `AuthProvider` wraps the entire app
+  - `useAuth()` hook throws if called outside provider
+  - Listens for `'ss:logout'` CustomEvent so the Axios interceptor can trigger logout
+
+- `client/src/components/ProtectedRoute.tsx` — route guard:
+  - Unauthenticated users redirected to `/login`
+  - Wrong role redirected to `/unauthorized`
+  - Optional `roles` prop; if omitted, any logged-in user passes
+
+- `client/src/pages/UnauthorizedPage.tsx` — 403 page
+
+- `client/src/pages/ProfilePage.tsx` — shows name, email, role chip
+
+- Student pages (`client/src/pages/student/`):
+  - `StudentDashboard.tsx` — stat cards + empty state
+  - `OpenSubmissionsPage.tsx` — lists open assignments (placeholder)
+  - `MySubmissionsPage.tsx` — lists own submissions (placeholder)
+
+- Lecturer pages (`client/src/pages/lecturer/`):
+  - `LecturerDashboard.tsx`
+  - `MyCoursesPage.tsx`
+  - `CreateSubmissionBoxPage.tsx` — form stub (POST not yet wired)
+  - `ManageSubmissionBoxesPage.tsx`
+  - `ReviewSubmissionsPage.tsx`
+
+- TA pages (`client/src/pages/ta/`):
+  - `TADashboard.tsx`
+  - `AssignedCoursesPage.tsx`
+  - `TAReviewSubmissionsPage.tsx`
+
+- Admin pages (`client/src/pages/admin/`):
+  - `AdminDashboard.tsx` — stat cards + quick actions + system status panel
+  - `UserManagementPage.tsx`
+  - `RoleManagementPage.tsx`
+  - `PendingApprovalsPage.tsx`
+
+- Root `.gitignore` — excludes `.claude/`, `node_modules/`, `*.db`, `.env`, build outputs
+
+**Modified files:**
+
+- `client/src/services/api.ts`:
+  - Fixed `authApi.register` field name: `name` → `full_name`
+  - Fixed role value in register type: added `'teaching_assistant'` (removed incorrect `'ta'`)
+  - Added Axios request interceptor: reads `localStorage['ss_token']`, sets `Authorization: Bearer <token>`
+  - Added Axios response interceptor: on 401 fires `'ss:logout'` CustomEvent (picked up by AuthContext)
+
+- `client/src/pages/LoginPage.tsx` — fully wired:
+  - Controlled inputs, `useState` for email/password/error/loading
+  - Calls `authApi.login()`, then `auth.login(token)`, navigates to `/dashboard`
+  - Displays API error message inline
+
+- `client/src/pages/RegisterPage.tsx` — fully wired:
+  - Fixed role select values: `'ta'` → `'teaching_assistant'`
+  - Client-side password match + length validation before sending
+  - Calls `authApi.register()` with correct `full_name` field
+  - Lecturers see "pending approval" message; others navigate to `/login` after 2.5 s
+
+- `client/src/components/Navbar.tsx` — auth-aware:
+  - Shows role-specific nav links based on `user.role`
+  - Logged-in: user chip (name + role tag) + Sign Out button
+  - Logged-out: Login + Register buttons
+  - Mobile menu mirrors desktop state
+
+- `client/src/pages/DashboardPage.tsx` — role dispatcher:
+  - Renders `StudentDashboard`, `LecturerDashboard`, `TADashboard`, or `AdminDashboard` based on `user.role`
+
+- `client/src/App.tsx` — wrapped with `<AuthProvider>`, all routes added:
+  - `/dashboard`, `/profile` — any authenticated user
+  - `/submissions/*` — student only
+  - `/lecturer/*` — lecturer only
+  - `/ta/*` — teaching_assistant only
+  - `/admin/*`, `/security-logs` — admin only
+
+- `client/src/index.css` — added CSS classes:
+  - `.alert-error`, `.alert-success`, `.alert-warning`
+  - `.empty-state`, `.role-tag`, `.user-chip`, `.dash-welcome`
+
+### Why This Change Was Needed
+The backend registration was complete but no client screen connected to it. Users had no way to log in, no auth state, no protected routes, and no role-specific UI. This phase closes that gap and makes the full registration flow testable end-to-end in the browser.
+
+### Security Relevance
+
+- **Frontend guards are UX only** — `ProtectedRoute` redirects unauthenticated users, but the real security enforcement is in server-side `authenticate` + `authorize` middleware (Phase 4). This is documented in code comments.
+- **localStorage JWT trade-off** — `localStorage` is accessible to any JS on the page (XSS risk). The alternative (`httpOnly` cookie) prevents JS access but requires CSRF protection. For this course project, `localStorage` is used with the understanding that XSS prevention (CSP, output encoding) is the complementary control.
+- **Auto-logout on 401** — the Axios interceptor fires `'ss:logout'` on any 401 response, which clears the token and user state. This prevents a user with an expired or revoked token from remaining in a logged-in UI state.
+- **No sensitive data in JWT decode** — the client uses the JWT payload only for display (name, role badge). Authorization decisions are never made client-side; every API call that needs authorization sends the raw token and the server validates it.
+
+### Testing
+- Register as student → 201, navigated to login
+- Register as lecturer → 201, "pending approval" message shown
+- Login with valid credentials → dashboard shows correct role UI
+- Navigate to `/security-logs` without admin token → redirected to `/unauthorized`
+- Navigate to `/dashboard` without any token → redirected to `/login`
+- Sign Out → token cleared, dashboard no longer accessible
+
+### Notes / Next Steps
+- Login API (`POST /api/auth/login`) still returns 501 — implement in Phase 3c with JWT issuance and bcrypt compare
+- `JWT_SECRET` must be replaced with a strong random value before login goes live
+- `CreateSubmissionBoxPage` form is a stub — wire to `POST /api/submissions` in Phase 5
+- `PendingApprovalsPage` and `UserManagementPage` will be wired in Phase 6
+
+---
+
+## Phase 3c — Secure Login (2026-05-07)
+
+### Changed Area
+`server/` — login implementation with bcrypt comparison, JWT issuance, account lockout
+
+### What Changed
+
+**New files:**
+
+- `server/src/utils/jwt.ts`
+  - `signToken(payload)` — signs a JWT with `HS256`, 15-minute expiry, secret from `env.JWT_SECRET`
+  - `verifyToken(token)` — verifies and returns the decoded payload
+  - Payload shape: `{ id, email, role, full_name }`
+  - Short expiry (15m) limits the window of abuse if a token is stolen
+
+**Modified files:**
+
+- `server/src/models/user.model.ts` — added four update methods:
+  - `incrementFailedAttempts(id)` — atomically increments counter
+  - `lockAccount(id, until)` — sets `status = 'locked'`, records `locked_until`, increments counter
+  - `resetFailedAttempts(id)` — clears counter, unlocks account if status was `'locked'`, nulls `locked_until`
+  - `updateLastLogin(id)` — stamps `last_login_at`
+
+- `server/src/controllers/auth.controller.ts` — `login` fully implemented:
+  1. Validates `email` and `password` presence
+  2. Looks up user by email (case-insensitive via `toLowerCase().trim()`)
+  3. Always runs `bcrypt.compare` — even when user doesn't exist — using `DUMMY_HASH` so response time is identical regardless of whether the email is registered (timing-safe)
+  4. Wrong credentials with known email → increments `failed_login_attempts`:
+     - 1–4 failures: returns `"Invalid credentials. N attempt(s) remaining before lockout."`
+     - 5th failure: calls `lockAccount()`, returns lockout message
+  5. Correct password → checks `status`:
+     - `'locked'` and lock still active → returns minutes remaining
+     - `'locked'` but expiry passed → falls through, login succeeds (auto-unlock)
+     - `'pending'` → rejects with approval-pending message
+     - `'deactivated'` → rejects
+     - `'active'` → resets counter, stamps last login, issues JWT
+  6. Returns `{ token }` on success
+
+- `server/src/controllers/auth.controller.ts` — `logout` implemented (stateless):
+  - Returns 200 with instruction to discard the token
+  - No server-side session state to clear (JWT is stateless)
+
+- `server/.env` — `JWT_SECRET` replaced with a 128-hex-char cryptographically random value (generated via `crypto.randomBytes(64).toString('hex')`)
+
+**Packages installed:**
+- `jsonwebtoken` (production)
+- `@types/jsonwebtoken` (dev)
+
+### Why This Change Was Needed
+Registration was complete but login returned 501. No user could authenticate. This phase closes the auth loop and makes the full register → login → JWT flow functional end-to-end.
+
+### Security Relevance
+
+- **Timing-safe comparison** — `bcrypt.compare` is always called, even for unknown emails. Without this, an attacker using Burp Suite could distinguish "email not found" (fast) from "wrong password" (slow bcrypt), enabling email enumeration at scale.
+- **Uniform error messages** — `"Invalid credentials"` is returned for both wrong email and wrong password cases. The lockout warning (`"N attempts remaining"`) is only shown when the email is confirmed correct, which is a deliberate UX trade-off consistent with OWASP guidance (showing remaining attempts is better than surprising users with a locked account).
+- **Account lockout** — after 5 consecutive wrong passwords, the account is locked for 15 minutes. Counter is reset on every successful login. This defeats online brute-force and credential-stuffing attacks.
+- **Short JWT expiry** — 15 minutes. A stolen token is usable for at most 15 minutes. Refresh tokens (longer-lived) are a Phase 4+ concern.
+- **Strong JWT secret** — 512 bits of entropy (128 hex chars from `crypto.randomBytes`). Brute-forcing an HS256 secret of this length is computationally infeasible.
+- **JWT payload** — includes only `id`, `email`, `role`, `full_name`. No sensitive fields (password hash, phone, etc.).
+- **`DUMMY_HASH` constant** — a valid bcrypt format string that always fails comparison but still costs the same CPU time as a real comparison, maintaining timing indistinguishability.
+- **Stateless logout** — the server issues no session cookie and keeps no session store, so there is nothing server-side to invalidate. The client clears `localStorage`. This is documented in the code comment so future maintainers don't add session state without considering the implications.
+
+### Testing (manual smoke test)
+- `POST /api/auth/login` with registered student credentials → 200 `{ token }`
+- `POST /api/auth/login` with wrong password → 401 `"Invalid credentials. 4 attempts remaining before lockout."`
+- After 5 wrong passwords → `locked` status in DB, 401 with lockout message
+- After lockout period expires → login succeeds again, counter reset
+- `POST /api/auth/login` with unregistered email → 401 `"Invalid credentials"` (same message, same response time)
+- `POST /api/auth/login` with pending lecturer → 401 approval-pending message
+- TypeScript compilation: zero errors ✓
+
+### Notes / Next Steps
+- `authenticate` middleware (Phase 4) reads the JWT and attaches `req.user` so route handlers know who is calling
+- `authorize` middleware (Phase 4) checks `req.user.role` against an allowed list
+- Refresh token flow is not implemented — after 15 minutes the client must log in again

@@ -293,8 +293,56 @@ ul { list-style: none; margin: 0; padding: 0; }
 .page-header h1 { font-size: 30px; margin-bottom: 6px; }
 
 /* ── Alert ── */
-.alert      { padding: 11px 16px; border-radius: 8px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
-.alert-info { background: rgba(139,92,246,0.08); color: var(--purple); border: 1px solid rgba(139,92,246,0.2); }
+.alert         { padding: 11px 16px; border-radius: 8px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.alert-info    { background: rgba(139,92,246,0.08); color: var(--purple);  border: 1px solid rgba(139,92,246,0.2); }
+.alert-error   { background: rgba(239,68,68,0.08);  color: #dc2626;        border: 1px solid rgba(239,68,68,0.2); }
+.alert-success { background: rgba(16,185,129,0.08); color: #059669;        border: 1px solid rgba(16,185,129,0.2); }
+.alert-warning { background: rgba(245,158,11,0.08); color: #d97706;        border: 1px solid rgba(245,158,11,0.2); }
+
+/* ── Empty state ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 56px 24px;
+  text-align: center;
+}
+.empty-state h3 { font-size: 18px; margin-bottom: 8px; }
+.empty-state p  { color: var(--text-secondary); max-width: 380px; }
+
+/* ── Role tag ── */
+.role-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--light-purple);
+  color: var(--deep-purple);
+}
+
+/* ── User chip (navbar) ── */
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 24px;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--border);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: border-color 0.18s, background 0.18s;
+}
+.user-chip:hover { border-color: var(--purple); background: var(--light-purple); color: var(--deep-purple); }
+
+/* ── Dashboard welcome line ── */
+.dash-welcome { margin-top: 6px; color: var(--text-secondary); }
 
 /* ── 404 ── */
 .not-found    { text-align: center; padding: 100px 24px; flex: 1; }

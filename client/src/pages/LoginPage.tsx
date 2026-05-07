@@ -1,11 +1,37 @@
-import type { FormEvent } from 'react';
-import { Link } from 'react-router-dom';
-import { LogIn, Mail, Lock, Info } from 'lucide-react';
+import { type FormEvent, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { LogIn, Mail, Lock } from 'lucide-react';
+import { authApi } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import axios from 'axios';
 
 export function LoginPage() {
-  const handleSubmit = (e: FormEvent) => {
+  const navigate = useNavigate();
+  const { login } = useAuth();
+
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    // TODO: call authApi.login() when backend is ready
+    setError('');
+    setLoading(true);
+
+    try {
+      const res = await authApi.login({ email, password });
+      login(res.data.token);
+      navigate('/dashboard', { replace: true });
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        setError((err.response?.data as { message?: string })?.message ?? 'Login failed');
+      } else {
+        setError('An unexpected error occurred');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -27,14 +53,24 @@ export function LoginPage() {
               <p className="auth-subtitle">Sign in to your SafeSubmit account</p>
             </div>
 
+            {error && (
+              <div className="alert alert-error" style={{ marginBottom: 16 }}>
+                {error}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit}>
               <div className="form-group">
                 <label className="form-label" htmlFor="email">
                   <Mail size={13} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
                   Email address
                 </label>
-                <input id="email" type="email" className="form-input"
-                  placeholder="you@example.com" autoComplete="email" />
+                <input
+                  id="email" type="email" className="form-input"
+                  placeholder="you@example.com" autoComplete="email"
+                  value={email} onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
               </div>
 
               <div className="form-group">
@@ -42,13 +78,19 @@ export function LoginPage() {
                   <Lock size={13} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
                   Password
                 </label>
-                <input id="password" type="password" className="form-input"
-                  placeholder="••••••••" autoComplete="current-password" />
+                <input
+                  id="password" type="password" className="form-input"
+                  placeholder="••••••••" autoComplete="current-password"
+                  value={password} onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
               </div>
 
-              <button type="submit" className="btn btn-primary"
-                style={{ width: '100%', justifyContent: 'center', padding: '12px', marginTop: 4 }}>
-                <LogIn size={17} /> Sign In
+              <button
+                type="submit" className="btn btn-primary" disabled={loading}
+                style={{ width: '100%', justifyContent: 'center', padding: '12px', marginTop: 4 }}
+              >
+                <LogIn size={17} /> {loading ? 'Signing in…' : 'Sign In'}
               </button>
             </form>
 
@@ -61,11 +103,6 @@ export function LoginPage() {
               </Link>
             </p>
           </div>
-        </div>
-
-        <div className="alert alert-info" style={{ marginTop: 14 }}>
-          <Info size={15} />
-          Authentication not yet implemented — UI skeleton only.
         </div>
       </div>
     </div>
