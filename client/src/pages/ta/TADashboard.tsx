@@ -1,25 +1,67 @@
 import { Link } from 'react-router-dom';
-import { BookOpen, FileText, Star, ArrowUpRight } from 'lucide-react';
+import { FileText, Star, ArrowUpRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useApiFetch } from '../../hooks/useApiFetch';
+import { submissionsApi } from '../../services/api';
+import type { Submission } from '../../services/api';
 
 export function TADashboard() {
   const { user } = useAuth();
 
+  const { data: subData, loading: subLoading } = useApiFetch<{ submissions: Submission[] }>(
+    () => submissionsApi.getAll(),
+  );
+
+  const subs = subData?.submissions ?? [];
+
+  const pendingCount = subLoading
+    ? '…'
+    : subs.filter(s => s.status === 'submitted' || s.status === 'under_review').length;
+
+  const todayStr = new Date().toDateString();
+  const gradedToday = subLoading
+    ? '…'
+    : subs.filter(
+        s =>
+          (s.status === 'graded' || s.status === 'returned') &&
+          new Date(s.updated_at).toDateString() === todayStr,
+      ).length;
+
   const stats = [
-    { icon: <BookOpen size={20} />, label: 'Assigned Courses', value: '—', color: '#ff4da6', link: '/ta/courses', desc: 'Courses you assist' },
-    { icon: <FileText size={20} />, label: 'Pending Review',   value: '—', color: '#d946ef', link: '/ta/review',  desc: 'Awaiting your review' },
-    { icon: <Star size={20} />,     label: 'Graded Today',     value: '—', color: '#8b5cf6', link: '/ta/review',  desc: 'Reviews completed today' },
+    {
+      icon: <FileText size={20} />,
+      label: 'Pending Review',
+      value: pendingCount,
+      color: '#d946ef',
+      link: '/ta/review',
+      desc: 'Awaiting your review',
+    },
+    {
+      icon: <Star size={20} />,
+      label: 'Graded Today',
+      value: gradedToday,
+      color: '#8b5cf6',
+      link: '/ta/review',
+      desc: 'Reviews completed today',
+    },
   ];
+
+  const queue = [...subs]
+    .filter(s => s.status === 'submitted' || s.status === 'under_review')
+    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+    .slice(0, 5);
 
   return (
     <div className="page">
       <div className="container">
         <div className="page-header">
           <h1>Teaching Assistant Dashboard</h1>
-          <p className="dash-welcome">Welcome, <strong>{user?.full_name}</strong>. Here's your review queue.</p>
+          <p className="dash-welcome">
+            Welcome, <strong>{user?.full_name}</strong>. Here's your review queue.
+          </p>
         </div>
 
-        <div className="grid-3" style={{ marginBottom: 32 }}>
+        <div className="grid-2" style={{ marginBottom: 32 }}>
           {stats.map((s, i) => (
             <Link to={s.link} key={i} className="card stat-card" style={{ textDecoration: 'none' }}>
               <div className="stat-card-icon" style={{ background: s.color }}>{s.icon}</div>
@@ -33,11 +75,51 @@ export function TADashboard() {
           ))}
         </div>
 
-        <div className="card empty-state">
-          <Star size={40} style={{ color: 'var(--text-muted)', marginBottom: 12 }} />
-          <h3>Review queue is empty</h3>
-          <p>Student submissions assigned for your review will appear here.</p>
-        </div>
+        {subLoading ? (
+          <div className="card" style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+            Loading review queue…
+          </div>
+        ) : queue.length === 0 ? (
+          <div className="card empty-state">
+            <Star size={40} style={{ color: 'var(--text-muted)', marginBottom: 12 }} />
+            <h3>Review queue is empty</h3>
+            <p>Student submissions assigned for your review will appear here.</p>
+          </div>
+        ) : (
+          <div className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 17, margin: 0 }}>Pending Reviews</h3>
+              <Link to="/ta/review" className="btn btn-ghost" style={{ fontSize: 13 }}>
+                View all <ArrowUpRight size={13} />
+              </Link>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {queue.map((sub, idx) => (
+                <div
+                  key={sub.id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px 0',
+                    borderBottom: idx < queue.length - 1 ? '1px solid var(--border)' : 'none',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      Submission{' '}
+                      <span style={{ fontFamily: 'monospace', fontSize: 12 }}>#{sub.id.slice(0, 8)}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {sub.submitted_at ? new Date(sub.submitted_at).toLocaleString() : 'Not yet submitted'}
+                    </div>
+                  </div>
+                  <span className="badge badge-warning">{sub.status.replace(/_/g, ' ')}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

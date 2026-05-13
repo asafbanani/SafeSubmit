@@ -46,6 +46,60 @@ export interface AuthResponse {
   };
 }
 
+export interface Assignment {
+  id: string;
+  lecturer_id: string;
+  title: string;
+  description: string | null;
+  due_date: string;
+  status: 'draft' | 'published' | 'closed' | 'archived';
+  max_score: number | null;
+  allow_late_submission: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Submission {
+  id: string;
+  assignment_id: string;
+  student_id: string;
+  file_path: string | null;
+  submission_text: string | null;
+  status: 'draft' | 'submitted' | 'under_review' | 'graded' | 'returned';
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SafeUser {
+  id: string;
+  full_name: string;
+  email: string;
+  role: string;
+  status: string;
+  is_active: number;
+  last_login_at: string | null;
+  failed_login_attempts: number;
+  locked_until: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuditLog {
+  id: string;
+  user_id: string | null;
+  action: string;
+  resource_type: string | null;
+  resource_id: string | null;
+  ip_address: string | null;
+  status: string;
+  severity: 'info' | 'warning' | 'error' | 'critical';
+  description: string | null;
+  created_at: string;
+}
+
 // ── API modules ───────────────────────────────────────────────────────────────
 
 export const healthApi = {
@@ -67,24 +121,33 @@ export const authApi = {
 };
 
 export const usersApi = {
-  getAll:  ()                          => api.get('/api/users'),
-  getById: (id: string)                => api.get(`/api/users/${id}`),
-  create:  (data: unknown)             => api.post('/api/users', data),
-  update:  (id: string, data: unknown) => api.put(`/api/users/${id}`, data),
+  getAll:  ()                          => api.get<{ users: SafeUser[] }>('/api/users'),
+  getById: (id: string)                => api.get<{ user: SafeUser }>(`/api/users/${id}`),
+  create:  (data: unknown)             => api.post<{ user: SafeUser }>('/api/users', data),
+  update:  (id: string, data: unknown) => api.put<{ user: SafeUser }>(`/api/users/${id}`, data),
   remove:  (id: string)                => api.delete(`/api/users/${id}`),
 };
 
 export const submissionsApi = {
-  getAll:  ()                          => api.get('/api/submissions'),
-  getById: (id: string)                => api.get(`/api/submissions/${id}`),
-  create:  (data: unknown)             => api.post('/api/submissions', data),
-  update:  (id: string, data: unknown) => api.put(`/api/submissions/${id}`, data),
+  getAll:  ()                          => api.get<{ submissions: Submission[] }>('/api/submissions'),
+  getById: (id: string)                => api.get<{ submission: Submission }>(`/api/submissions/${id}`),
+  create:  (data: unknown)             => api.post<{ submission: Submission }>('/api/submissions', data),
+  update:  (id: string, data: unknown) => api.put<{ submission: Submission }>(`/api/submissions/${id}`, data),
   remove:  (id: string)                => api.delete(`/api/submissions/${id}`),
 };
 
+export const assignmentsApi = {
+  getAll:  ()                          => api.get<{ assignments: Assignment[] }>('/api/assignments'),
+  getById: (id: string)                => api.get<{ assignment: Assignment }>(`/api/assignments/${id}`),
+  create:  (data: unknown)             => api.post<{ assignment: Assignment }>('/api/assignments', data),
+  update:  (id: string, data: unknown) => api.put<{ assignment: Assignment }>(`/api/assignments/${id}`, data),
+  remove:  (id: string)                => api.delete(`/api/assignments/${id}`),
+};
+
 export const securityLogsApi = {
-  getAll:  ()           => api.get('/api/security-logs'),
-  getById: (id: string) => api.get(`/api/security-logs/${id}`),
+  getAll:  (params?: { severity?: string; limit?: number; offset?: number }) =>
+    api.get<{ logs: AuditLog[]; total: number }>('/api/security-logs', { params }),
+  getById: (id: string) => api.get<{ log: AuditLog }>(`/api/security-logs/${id}`),
 };
 
 export default api;
