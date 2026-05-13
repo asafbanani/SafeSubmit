@@ -8,6 +8,7 @@ import { healthRouter } from './routes/health.routes';
 import { authRouter } from './routes/auth.routes';
 import { usersRouter } from './routes/users.routes';
 import { submissionsRouter } from './routes/submissions.routes';
+import { assignmentsRouter } from './routes/assignments.routes';
 import { securityLogsRouter } from './routes/securityLogs.routes';
 import { errorHandler } from './middlewares/errorHandler';
 
@@ -24,6 +25,7 @@ app.use(express.json());
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/users', usersRouter);
+app.use('/api/assignments', assignmentsRouter);
 app.use('/api/submissions', submissionsRouter);
 app.use('/api/security-logs', securityLogsRouter);
 

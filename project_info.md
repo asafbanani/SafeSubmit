@@ -634,3 +634,92 @@ Registration was complete but login returned 501. No user could authenticate. Th
 - `authenticate` middleware (Phase 4) reads the JWT and attaches `req.user` so route handlers know who is calling
 - `authorize` middleware (Phase 4) checks `req.user.role` against an allowed list
 - Refresh token flow is not implemented — after 15 minutes the client must log in again
+
+---
+
+## Phase 4 — Access Control & Authorization (2026-05-11)
+
+### Changed Area
+`server/` — authentication middleware, authorization middleware, all route guards, all controller implementations
+
+### What Already Existed (not rewritten)
+- `AppError.ts` — `ForbiddenError` (403), `UnauthorizedError` (401), `NotFoundError` (404) ✓
+- `jwt.ts` — `signToken` / `verifyToken` ✓
+- `errorHandler.ts` — routes AppError subclasses to correct HTTP status ✓
+- `client/src/components/ProtectedRoute.tsx` — frontend route protection with role support ✓
+- `client/src/context/AuthContext.tsx` — client auth state, JWT decode, logout event ✓
+- `client/src/App.tsx` — all routes wrapped with ProtectedRoute + role arrays ✓
+
+### New Files Created
+
+| File | Purpose |
+|------|---------|
+| `server/src/types/express.d.ts` | TypeScript module augmentation — adds `req.user?: { id, email, role, full_name }` to every Express Request |
+| `server/src/middlewares/authenticate.ts` | Reads `Authorization: Bearer <token>`, verifies JWT, attaches `req.user` — returns 401 on failure |
+| `server/src/middlewares/authorize.ts` | `requireRole(...roles)` — 403 if role not in list; `requireOwnerOrRole(param, ...roles)` — 403 unless `req.params[param] === req.user.id` or role matches |
+| `server/src/controllers/assignments.controller.ts` | Full CRUD for assignments with role-scoped visibility and ownership checks |
+| `server/src/routes/assignments.routes.ts` | `GET /` and `GET /:id` — all roles; `POST/PUT/DELETE` — lecturer + admin only |
+
+### Modified Files
+
+| File | Change |
+|------|--------|
+| `server/src/routes/submissions.routes.ts` | Added `authenticate` on all routes; `requireRole` on POST/PUT/DELETE |
+| `server/src/routes/users.routes.ts` | Added `authenticate` + `requireRole('admin')` or `requireOwnerOrRole` per route |
+| `server/src/routes/securityLogs.routes.ts` | Added `authenticate + requireRole('admin')` on all routes |
+| `server/src/controllers/submissions.controller.ts` | Fully implemented — ownership-scoped queries, IDOR prevention |
+| `server/src/controllers/users.controller.ts` | Fully implemented — admin vs self access, soft-delete only |
+| `server/src/controllers/securityLogs.controller.ts` | Fully implemented — paginated audit_logs query |
+| `server/src/app.ts` | Registered `/api/assignments` router |
+
+### Security Relevance
+
+**Requirement 1 — Three permission levels enforced on the backend:**
+- `student`: POST submissions (own); GET only their own submissions; GET/PUT own profile
+- `teaching_assistant`: GET all submissions (read-only review access); no edit on assignments
+- `lecturer`: CRUD on own assignments; GET submissions for own assignments; update submission status
+- `admin`: full access to all routes including user management and security logs
+
+**Requirement 2 — Admin-restricted functionality:**
+- `GET /api/users` → 403 for non-admin
+- `DELETE /api/users/:id` → 403 for non-admin (soft deactivate only, preserves audit trail)
+- `GET /api/security-logs` and `GET /api/security-logs/:id` → 403 for non-admin
+- Role and status changes via `PUT /api/users/:id` only applied when caller is admin
+
+**Requirement 3 — Database record access by ownership (IDOR prevention):**
+- `student_id` in submissions is ALWAYS `req.user.id` (injected server-side on POST, never from body)
+- `GET /api/submissions/:id` — student gets 403 if `sub.student_id !== req.user.id`
+- `GET /api/users/:id` — `requireOwnerOrRole('id', 'admin')` rejects cross-user access before the controller runs
+- `PUT/DELETE /api/assignments/:id` — controller checks `assignment.lecturer_id === req.user.id` before updating
+
+**Requirement 4 — Shared read, restricted edit:**
+- `GET /api/assignments` and `GET /api/assignments/:id` → all authenticated users (students see published only)
+- `POST /api/assignments` → lecturer + admin only (`requireRole` in route)
+- `PUT /api/assignments/:id` → lecturer who owns it OR admin (ownership checked in controller)
+- Frontend hides edit buttons by role, but backend enforces the same rules independently
+
+**Requirement 5 — Reusable middleware:**
+- `authenticate` — verifies JWT, attaches req.user
+- `requireRole(...roles)` — 403 if user's role not in list
+- `requireOwnerOrRole(paramName, ...roles)` — 403 unless owner OR privileged role
+
+**Requirement 6 — Frontend route protection (already existed):**
+- `ProtectedRoute` in `client/src/components/ProtectedRoute.tsx` handles auth + role redirect
+- All routes in `App.tsx` wrapped with appropriate roles
+- Security logs route: `roles={['admin']}` → non-admin redirected to `/unauthorized`
+- Comment in code documents that frontend guards are UX only; real security is server middleware
+
+### Manual Test Cases (for report)
+1. `GET /api/security-logs` with student token → 403 Forbidden ✓
+2. `GET /api/security-logs` with admin token → 200 with log entries ✓
+3. `GET /api/submissions/:id` with wrong student token → 403 Forbidden ✓
+4. `GET /api/assignments` with student token → 200, only published assignments ✓
+5. `PUT /api/assignments/:id` with student token → 403 Forbidden ✓
+6. `PUT /api/assignments/:id` with owning lecturer token → 200 updated ✓
+7. `POST /api/submissions` with body `{ student_id: "other-user-id" }` → student_id ignored, uses JWT id ✓
+8. `DELETE /api/users/:id` with non-admin token → 403 Forbidden ✓
+9. No Authorization header → 401 Unauthorized ✓
+10. Expired JWT token → 401 Unauthorized ✓
+
+### TypeScript
+Zero compile errors after all changes.
