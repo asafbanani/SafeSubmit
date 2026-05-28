@@ -723,3 +723,119 @@ Registration was complete but login returned 501. No user could authenticate. Th
 
 ### TypeScript
 Zero compile errors after all changes.
+
+---
+
+## 2026-05-28 - Phase 5: Secure File Upload
+
+### Changed Area
+Full-stack file upload — server storage, validation, API endpoints, client upload/download UI.
+
+### What Changed
+
+**New server files:**
+
+| File | Purpose |
+|------|---------|
+| `server/src/utils/fileTypeValidator.ts` | Magic-byte validation (PDF `%PDF-`, DOCX `PK\x03\x04`). Sanitizes original filenames. Rejects mismatched extension/content. |
+| `server/src/middlewares/upload.middleware.ts` | Multer with `memoryStorage`, 5 MB size limit, extension whitelist filter. Exports `UPLOADS_DIR`, `FILES_DIR`, `ensureUploadsDir`. |
+| `server/src/utils/auditLogger.ts` | Fire-and-forget audit log utility used by all file operations. |
+| `server/src/models/file.model.ts` | CRUD model for the `upload_files` table. `stored_filename` is never exposed by the model's public interface. |
+| `server/src/controllers/file.controller.ts` | All six file handlers: `uploadAssignmentFile`, `listAssignmentFiles`, `uploadSubmissionFile`, `listSubmissionFiles`, `downloadFile`, `deleteFile`. |
+| `server/src/routes/file.routes.ts` | Route definitions mounted at `/api`. Uses existing `authenticate` and `requireRole` middleware. |
+
+**Modified server files:**
+
+| File | Change |
+|------|--------|
+| `server/src/db/schema.sql` | Added `upload_files` table with 4 indexes. |
+| `server/src/config/env.ts` | Added `UPLOADS_PATH` env variable (default `./uploads`). |
+| `server/src/middlewares/errorHandler.ts` | Added handling for `multer.MulterError` (size limit → HTTP 400) and `REJECTED_EXTENSION:` prefix errors. |
+| `server/src/app.ts` | Registered `fileRouter` at `/api`. Added comment confirming `uploads/` is NOT served by `express.static`. |
+| `.gitignore` | Added `uploads/` entry so uploaded user files are never committed. |
+
+**New client additions:**
+
+| File | Change |
+|------|--------|
+| `client/src/services/api.ts` | Added `UploadedFileRecord` type and `filesApi` with: `uploadSubmissionFile`, `uploadAssignmentFile`, `listSubmissionFiles`, `listAssignmentFiles`, `downloadFile` (blob trigger), `deleteFile`. |
+| `client/src/pages/student/OpenSubmissionsPage.tsx` | Added `SubmissionUploadPanel` per assignment card: file picker, size display, upload, file list with download and delete. |
+| `client/src/pages/student/MySubmissionsPage.tsx` | Added collapsible `SubmissionFilePanel` per submission row: lazy-loads files on expand, download and delete (draft only). |
+| `client/src/pages/lecturer/ManageSubmissionBoxesPage.tsx` | Added `AssignmentFilePanel` per assignment card: upload instruction files, list, download, delete. |
+| `client/src/pages/lecturer/ReviewSubmissionsPage.tsx` | Added `SubmissionFileList` per submission row: expand to see and download student-uploaded files. |
+
+**Documentation:**
+
+| File | Change |
+|------|--------|
+| `DBschema.md` | Added section 4.8 (`upload_files`) with full column descriptions, constraints, security notes. Added SQL DDL to section 5. |
+| `project_info.md` | This entry. |
+
+### New API Endpoints
+
+| Method | Path | Roles | Description |
+|--------|------|-------|-------------|
+| `POST` | `/api/assignments/:assignmentId/files` | lecturer (owner), admin | Upload assignment instruction file |
+| `GET` | `/api/assignments/:assignmentId/files` | all authenticated | List assignment instruction files |
+| `POST` | `/api/assignments/:assignmentId/submissions/upload` | student | Upload submission file (auto-creates draft submission if needed) |
+| `GET` | `/api/submissions/:submissionId/files` | student (own), lecturer (their assignments), TA, admin | List submission files |
+| `GET` | `/api/files/:fileId/download` | authenticated, access-controlled per file type | Authenticated file download |
+| `DELETE` | `/api/files/:fileId` | student (own draft), lecturer (own assignment), admin | Delete file + physical copy |
+
+### Why This Change Was Needed
+Students needed a way to attach documents to their submissions. Lecturers needed a way to attach instruction sheets to assignment boxes. File uploads are a core feature of any assignment submission system and required explicit security treatment (magic byte validation, UUID storage, authenticated downloads).
+
+### Security Relevance
+
+1. **Multer memory storage** — files are held in RAM until validated. Invalid files never reach disk.
+2. **Extension whitelist** — only `.pdf` and `.docx` accepted in fileFilter (returns HTTP 400 immediately).
+3. **Magic byte validation** — actual file bytes are checked: `%PDF-` for PDFs, `PK\x03\x04` for DOCX/ZIP. A renamed `.exe` is rejected.
+4. **UUID storage filename** — `randomUUID() + ext` is the only name written to disk. The original filename is sanitised and stored only in the DB for display.
+5. **Path traversal prevention** — `sanitizeOriginalFilename` calls `path.basename` (strips `../../`), then character-whitelists the result before DB insert.
+6. **Private uploads folder** — `server/uploads/files/` is not served by `express.static`. No direct URL can reach the files.
+7. **Authenticated download only** — `GET /api/files/:id/download` requires a valid JWT (`authenticate`). No token → 401.
+8. **RBAC on download** — assignment files: students need published assignment; lecturers need ownership; submission files: students need ownership; lecturers need assignment ownership.
+9. **404 for unauthorised access** — returns 404 (not 403) on unauthorised download/delete so file existence is not confirmed.
+10. **Cleanup on failure** — if DB insert fails after file write, `deletePhysicalFile` is called. If file is missing on download, 404 is returned and the discrepancy is logged.
+11. **Content-Disposition: attachment** — forces download in browser, prevents inline rendering of potentially malicious content.
+12. **Audit logging** — `auditLog` writes to `audit_logs` for: successful upload, rejected upload (extension), rejected upload (magic bytes), unauthorised download attempt, unauthorised delete attempt, successful download, successful delete.
+13. **`uploads/` in `.gitignore`** — uploaded user files are never committed to version control.
+
+### Testing
+
+See manual testing guide below.
+
+**Test 1 — Valid PDF upload succeeds:**
+Log in as Alice (student). Go to Open Submissions. Choose a valid PDF file → click Upload. Expected: HTTP 201, file appears in list.
+
+**Test 2 — Oversized file rejected:**
+Attempt upload of a file > 5 MB. Expected: HTTP 400 "File too large. Maximum allowed size is 5 MB."
+
+**Test 3 — Wrong extension rejected:**
+Upload a `.txt` or `.jpg` file. Expected: HTTP 400 "Only PDF and DOCX files are accepted."
+
+**Test 4 — Mismatched content rejected:**
+Rename a `.txt` file to `test.pdf`. Upload it. Expected: HTTP 400 "File content does not match the declared extension."
+
+**Test 5 — UUID storage name:**
+After uploading, check `server/uploads/files/`. The file on disk has a UUID name, not the original name.
+
+**Test 6 — No public access:**
+Try visiting `http://localhost:3000/uploads/files/<any-filename>` in browser. Expected: 404 (Express has no static handler for this path).
+
+**Test 7 — Download without JWT returns 401:**
+In DevTools console: `fetch('http://localhost:3000/api/files/<id>/download')` (no Authorization header). Expected: 401.
+
+**Test 8 — Student cannot download another student's submission file:**
+Log in as Bob. Try `GET /api/files/<alice-file-id>/download`. Expected: 404.
+
+**Test 9 — Download includes Content-Disposition: attachment:**
+In DevTools Network tab, inspect a download response. Look for: `Content-Disposition: attachment; filename="..."`.
+
+**Test 10 — Audit log created:**
+After an upload and a rejected upload, log in as admin, go to Security Logs. Verify entries for `file_uploaded` and `upload_rejected`.
+
+### Notes / Next Steps
+- `change-password` route (`PUT /api/auth/change-password`) still returns 501 — will be implemented in a later phase.
+- The `upload_files.submission_id` FK has `ON DELETE RESTRICT`, meaning a submission with files cannot be deleted until its files are removed first. Students should delete files before deleting a draft submission.
+- Future improvement: add a file count badge per submission in review tables.

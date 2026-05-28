@@ -356,6 +356,42 @@ users [any]   (1) ────────────────────�
 
 ---
 
+### 4.8 `upload_files`
+
+**Purpose:** Metadata for every file uploaded into the system. Covers two upload types: instruction files attached to assignments by lecturers (`assignment_file`) and submission files uploaded by students (`submission_file`). The physical file is stored on disk under a UUID-based name (`stored_filename`) that is never sent to clients. The `original_filename` is sanitized before insertion and is the only filename clients see.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | TEXT | NOT NULL | — | UUID v4. Primary key. |
+| `owner_user_id` | TEXT | NOT NULL | — | FK → `users.id`. The user who uploaded the file. |
+| `assignment_id` | TEXT | NULL | `NULL` | FK → `assignments.id`. Set for both upload types (identifies which assignment the file belongs to). |
+| `submission_id` | TEXT | NULL | `NULL` | FK → `submissions.id`. Set only for `submission_file` uploads. NULL for `assignment_file`. |
+| `original_filename` | TEXT | NOT NULL | — | Sanitized display name (e.g. `report.pdf`). Shown to clients. No path components. |
+| `stored_filename` | TEXT | NOT NULL | — | UUID-based filename on disk (e.g. `a1b2c3d4-…-uuid.pdf`). UNIQUE. Never sent to clients. |
+| `mime_type` | TEXT | NOT NULL | — | Validated MIME type derived from magic bytes, not from the client header. |
+| `file_size` | INTEGER | NOT NULL | — | File size in bytes. |
+| `upload_type` | TEXT | NOT NULL | — | `assignment_file` or `submission_file`. Enforced by CHECK constraint. |
+| `uploaded_at` | TEXT | NOT NULL | `datetime('now')` | ISO 8601 upload timestamp. |
+
+**Constraints:**
+- `owner_user_id` FK references `users(id)` with `ON DELETE RESTRICT`
+- `assignment_id` FK references `assignments(id)` with `ON DELETE RESTRICT`
+- `submission_id` FK references `submissions(id)` with `ON DELETE RESTRICT`
+- `stored_filename` is UNIQUE — each physical file has exactly one metadata record
+- `upload_type` CHECK enforces `assignment_file`, `submission_file`
+
+**Security notes:**
+- `stored_filename` is a UUID and is never exposed in any API response. Clients reference files by `id` only.
+- `original_filename` is sanitized using `path.basename()` and a character whitelist before insert, preventing path traversal filenames (`../../etc/passwd`) from being stored in the DB.
+- Magic byte validation is performed on the raw file buffer before insertion — the client-supplied Content-Type and file extension are not trusted alone.
+- Files are stored in `server/uploads/files/` which is NOT served by `express.static`. All downloads go through the authenticated `GET /api/files/:id/download` endpoint.
+- Deleting a file removes the physical file first, then the DB record. If the physical file is missing at download time, the endpoint returns 404 and logs the discrepancy.
+- Unauthorised download and delete attempts return 404 (not 403) to avoid confirming that the file exists.
+
+**Indexes:** `owner_user_id`, `assignment_id`, `submission_id`, `upload_type`
+
+---
+
 ## 5. SQL Schema
 
 ```sql
@@ -522,6 +558,30 @@ CREATE INDEX IF NOT EXISTS idx_lar_user_id      ON lecturer_approval_requests(us
 CREATE INDEX IF NOT EXISTS idx_lar_status       ON lecturer_approval_requests(status);
 CREATE INDEX IF NOT EXISTS idx_lar_requested_at ON lecturer_approval_requests(requested_at);
 CREATE INDEX IF NOT EXISTS idx_lar_reviewed_by  ON lecturer_approval_requests(reviewed_by);
+
+-- ------------------------------------------------------------
+-- upload_files
+-- stored_filename is a UUID-based disk name — never exposed to clients
+-- original_filename is sanitised by the application before INSERT
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS upload_files (
+  id                TEXT    NOT NULL PRIMARY KEY,
+  owner_user_id     TEXT    NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  assignment_id     TEXT    REFERENCES assignments(id) ON DELETE RESTRICT,
+  submission_id     TEXT    REFERENCES submissions(id) ON DELETE RESTRICT,
+  original_filename TEXT    NOT NULL,
+  stored_filename   TEXT    NOT NULL UNIQUE,
+  mime_type         TEXT    NOT NULL,
+  file_size         INTEGER NOT NULL,
+  upload_type       TEXT    NOT NULL
+                      CHECK (upload_type IN ('assignment_file', 'submission_file')),
+  uploaded_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_upload_files_owner      ON upload_files(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_upload_files_assignment ON upload_files(assignment_id);
+CREATE INDEX IF NOT EXISTS idx_upload_files_submission ON upload_files(submission_id);
+CREATE INDEX IF NOT EXISTS idx_upload_files_type       ON upload_files(upload_type);
 ```
 
 ---

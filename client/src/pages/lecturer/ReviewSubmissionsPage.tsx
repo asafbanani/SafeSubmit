@@ -1,14 +1,107 @@
-import { Star } from 'lucide-react';
+import { useState } from 'react';
+import { Star, Download, FileText, ChevronDown, ChevronRight } from 'lucide-react';
+import axios from 'axios';
 import { useApiFetch } from '../../hooks/useApiFetch';
-import { submissionsApi } from '../../services/api';
-import type { Submission } from '../../services/api';
+import { submissionsApi, filesApi } from '../../services/api';
+import type { Submission, UploadedFileRecord } from '../../services/api';
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024)        return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ── Inline file list for a single submission ──────────────────────────────────
+
+interface SubmissionFileListProps {
+  submissionId: string;
+}
+
+function SubmissionFileList({ submissionId }: SubmissionFileListProps) {
+  const [expanded, setExpanded]     = useState(false);
+  const [files, setFiles]           = useState<UploadedFileRecord[] | null>(null);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState<string | null>(null);
+
+  async function toggle() {
+    if (expanded) { setExpanded(false); return; }
+    setExpanded(true);
+    if (files !== null) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await filesApi.listSubmissionFiles(submissionId);
+      setFiles(res.data.files);
+    } catch (err: unknown) {
+      let msg = 'Could not load files.';
+      if (axios.isAxiosError(err)) {
+        msg = (err.response?.data as { message?: string } | undefined)?.message ?? msg;
+      }
+      setError(msg);
+      setFiles([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDownload(fileId: string, filename: string) {
+    try {
+      await filesApi.downloadFile(fileId, filename);
+    } catch {
+      setError('Download failed.');
+    }
+  }
+
+  return (
+    <>
+      <button
+        onClick={toggle}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}
+      >
+        {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        Files
+      </button>
+      {expanded && (
+        <div style={{ marginTop: 4, paddingLeft: 4 }}>
+          {error && <div className="alert alert-error" style={{ fontSize: 11, marginBottom: 4 }}>{error}</div>}
+          {loading ? (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Loading…</div>
+          ) : !files || files.length === 0 ? (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>No files.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {files.map(f => (
+                <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                  <FileText size={11} style={{ flexShrink: 0 }} />
+                  <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.original_filename}>
+                    {f.original_filename}
+                  </span>
+                  <span style={{ color: 'var(--text-muted)' }}>{formatBytes(f.file_size)}</span>
+                  <button
+                    className="btn"
+                    style={{ padding: '2px 6px', fontSize: 11 }}
+                    title="Download"
+                    onClick={() => handleDownload(f.id, f.original_filename)}
+                  >
+                    <Download size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export function ReviewSubmissionsPage() {
   const { data, loading, error } = useApiFetch<{ submissions: Submission[] }>(
     () => submissionsApi.getAll(),
   );
 
-  // Backend only returns submissions for the lecturer's own assignments
   const reviewable = data?.submissions.filter(
     s => s.status === 'submitted' || s.status === 'under_review',
   ) ?? [];
@@ -20,7 +113,7 @@ export function ReviewSubmissionsPage() {
       <div className="container">
         <div className="page-header">
           <h1>Review Submissions</h1>
-          <p>Grade and provide feedback on student submissions.</p>
+          <p>Grade and provide feedback on student submissions. Click "Files" to download uploaded work.</p>
         </div>
 
         {error && (
@@ -54,7 +147,7 @@ export function ReviewSubmissionsPage() {
                       <th>Student</th>
                       <th>Status</th>
                       <th>Submitted At</th>
-                      <th>Updated</th>
+                      <th>Files</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -79,8 +172,8 @@ export function ReviewSubmissionsPage() {
                         <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>
                           {sub.submitted_at ? new Date(sub.submitted_at).toLocaleString() : '—'}
                         </td>
-                        <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                          {new Date(sub.updated_at).toLocaleString()}
+                        <td>
+                          <SubmissionFileList submissionId={sub.id} />
                         </td>
                       </tr>
                     ))}

@@ -9,11 +9,16 @@ const api = axios.create({
   withCredentials: true,
 });
 
-// Attach JWT to every request if one is stored
+// Attach JWT to every request if one is stored.
+// For FormData (file uploads), delete the Content-Type default so the browser
+// can set "multipart/form-data; boundary=..." automatically — multer requires this.
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`;
+  }
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
   }
   return config;
 });
@@ -148,6 +153,61 @@ export const securityLogsApi = {
   getAll:  (params?: { severity?: string; limit?: number; offset?: number }) =>
     api.get<{ logs: AuditLog[]; total: number }>('/api/security-logs', { params }),
   getById: (id: string) => api.get<{ log: AuditLog }>(`/api/security-logs/${id}`),
+};
+
+// ── File upload / download ────────────────────────────────────────────────────
+
+export interface UploadedFileRecord {
+  id:                string;
+  owner_user_id:     string;
+  assignment_id:     string | null;
+  submission_id:     string | null;
+  original_filename: string;
+  mime_type:         string;
+  file_size:         number;
+  upload_type:       'assignment_file' | 'submission_file';
+  uploaded_at:       string;
+}
+
+export const filesApi = {
+  uploadSubmissionFile: (assignmentId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post<{ file: UploadedFileRecord; submission_id: string }>(
+      `/api/assignments/${assignmentId}/submissions/upload`,
+      form,
+    );
+  },
+
+  uploadAssignmentFile: (assignmentId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post<{ file: UploadedFileRecord }>(
+      `/api/assignments/${assignmentId}/files`,
+      form,
+    );
+  },
+
+  listSubmissionFiles: (submissionId: string) =>
+    api.get<{ files: UploadedFileRecord[] }>(`/api/submissions/${submissionId}/files`),
+
+  listAssignmentFiles: (assignmentId: string) =>
+    api.get<{ files: UploadedFileRecord[] }>(`/api/assignments/${assignmentId}/files`),
+
+  downloadFile: async (fileId: string, filename: string): Promise<void> => {
+    const response = await api.get<Blob>(`/api/files/${fileId}/download`, { responseType: 'blob' });
+    const url = URL.createObjectURL(response.data);
+    const a   = document.createElement('a');
+    a.href     = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
+
+  deleteFile: (fileId: string) =>
+    api.delete(`/api/files/${fileId}`),
 };
 
 export default api;

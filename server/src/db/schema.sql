@@ -163,3 +163,27 @@ CREATE INDEX IF NOT EXISTS idx_lar_user_id      ON lecturer_approval_requests(us
 CREATE INDEX IF NOT EXISTS idx_lar_status       ON lecturer_approval_requests(status);
 CREATE INDEX IF NOT EXISTS idx_lar_requested_at ON lecturer_approval_requests(requested_at);
 CREATE INDEX IF NOT EXISTS idx_lar_reviewed_by  ON lecturer_approval_requests(reviewed_by);
+
+-- ------------------------------------------------------------
+-- upload_files  (metadata for every uploaded file)
+-- stored_filename is the UUID-based name on disk — never exposed to clients
+-- original_filename is sanitised before insert
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS upload_files (
+  id                TEXT    NOT NULL PRIMARY KEY,
+  owner_user_id     TEXT    NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  assignment_id     TEXT    REFERENCES assignments(id) ON DELETE RESTRICT,
+  submission_id     TEXT    REFERENCES submissions(id) ON DELETE RESTRICT,
+  original_filename TEXT    NOT NULL,
+  stored_filename   TEXT    NOT NULL UNIQUE,
+  mime_type         TEXT    NOT NULL,
+  file_size         INTEGER NOT NULL,
+  upload_type       TEXT    NOT NULL
+                      CHECK (upload_type IN ('assignment_file', 'submission_file')),
+  uploaded_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_upload_files_owner      ON upload_files(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_upload_files_assignment ON upload_files(assignment_id);
+CREATE INDEX IF NOT EXISTS idx_upload_files_submission ON upload_files(submission_id);
+CREATE INDEX IF NOT EXISTS idx_upload_files_type       ON upload_files(upload_type);
