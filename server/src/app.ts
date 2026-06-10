@@ -13,6 +13,7 @@ import { submissionsRouter } from './routes/submissions.routes';
 import { assignmentsRouter } from './routes/assignments.routes';
 import { securityLogsRouter } from './routes/securityLogs.routes';
 import { fileRouter } from './routes/file.routes';
+import { resourcePreviewRouter } from './routes/resourcePreview.routes';
 import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
@@ -66,7 +67,8 @@ app.use('/api/users', usersRouter);
 app.use('/api/assignments', assignmentsRouter);
 app.use('/api/submissions', submissionsRouter);
 app.use('/api/security-logs', securityLogsRouter);
-app.use('/api', fileRouter);  // file upload/download/delete endpoints
+app.use('/api', fileRouter);             // file upload/download/delete endpoints
+app.use('/api', resourcePreviewRouter); // SSRF-guarded external image proxy
 
 // NOTE: the uploads/ directory is intentionally NOT served via express.static.
 // All file access goes through authenticated /api/files/:id/download endpoints.

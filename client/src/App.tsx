@@ -19,6 +19,7 @@ import { MyCoursesPage }              from './pages/lecturer/MyCoursesPage';
 import { ManageSubmissionBoxesPage }  from './pages/lecturer/ManageSubmissionBoxesPage';
 import { CreateSubmissionBoxPage }    from './pages/lecturer/CreateSubmissionBoxPage';
 import { ReviewSubmissionsPage }      from './pages/lecturer/ReviewSubmissionsPage';
+import ResourcePreviewPage            from './pages/lecturer/ResourcePreviewPage';
 
 import { AssignedCoursesPage }      from './pages/ta/AssignedCoursesPage';
 import { TAReviewSubmissionsPage }  from './pages/ta/TAReviewSubmissionsPage';
@@ -67,6 +68,9 @@ function App() {
             } />
             <Route path="/lecturer/review" element={
               <ProtectedRoute roles={['lecturer']}><ReviewSubmissionsPage /></ProtectedRoute>
+            } />
+            <Route path="/lecturer/resource-preview" element={
+              <ProtectedRoute roles={['lecturer', 'teaching_assistant', 'admin']}><ResourcePreviewPage /></ProtectedRoute>
             } />
 
             {/* Teaching Assistant */}

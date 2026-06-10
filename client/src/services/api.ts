@@ -210,4 +210,15 @@ export const filesApi = {
     api.delete(`/api/files/${fileId}`),
 };
 
+// ── Resource Preview (SSRF-guarded server-side image fetch) ───────────────────
+
+export const resourcePreviewApi = {
+  /**
+   * Asks the server to fetch `url` through the SSRF defense layer and return
+   * the image bytes. Returns a Blob that can be rendered with URL.createObjectURL.
+   */
+  fetch: (url: string) =>
+    api.post<Blob>('/api/resource-preview', { url }, { responseType: 'blob' }),
+};
+
 export default api;

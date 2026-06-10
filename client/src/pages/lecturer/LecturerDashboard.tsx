@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { BookOpen, PlusCircle, FileText, Star, ArrowUpRight, Calendar } from 'lucide-react';
+import { BookOpen, PlusCircle, Star, ArrowUpRight, Calendar } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useApiFetch } from '../../hooks/useApiFetch';
 import { assignmentsApi, submissionsApi } from '../../services/api';
